@@ -34,7 +34,8 @@ func (ipr *Ipref) resolve_aa(req *dns.Msg) ([]dns.RR, error) {
 
 	upRes, err := ipr.upstreamResolve(name, dns.TypeTXT)
 	if err != nil {
-		log.Debugf("upstream server error: %v", err)
+		err = fmt.Errorf("error querying upstream: %v", err)
+		log.Errorf("%v", err)
 		return nil, err
 	}
 
@@ -113,7 +114,7 @@ func (ipr *Ipref) resolve_aa(req *dns.Msg) ([]dns.RR, error) {
 
 						ea, err = ipr.encoded_address(name, ea_ipver, gw, ref)
 						if err != nil {
-							log.Debugf("error getting encoded address for %v + %v: %v", gw, ref, err)
+							log.Errorf("error getting encoded address for %v + %v: %v", gw, ref, err)
 							continue
 						}
 
@@ -125,7 +126,7 @@ func (ipr *Ipref) resolve_aa(req *dns.Msg) ([]dns.RR, error) {
 
 				ea, err = ipr.encoded_address(name, ea_ipver, gw, ref)
 				if err != nil {
-					log.Debugf("error getting encoded address for %v + %v: %v", gw, ref, err)
+					log.Errorf("error getting encoded address for %v + %v: %v", gw, ref, err)
 					continue
 				}
 
