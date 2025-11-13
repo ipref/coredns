@@ -28,6 +28,8 @@ This code includes technology covered by patent US 10,749,840 B2.
 ipref [FROM...] {
     except IGNORED_NAMES...
     upstream ADDR
+    ea-ipver 4|6|both
+    gw-ipver 4|6|both
     mapper NAME
     mapper-socket-dir PATH
 }
@@ -37,6 +39,12 @@ ipref [FROM...] {
   from the server block are used.
 * **IGNORED_NAMES** in `except` is a space-separated list of domains to exclude from resolving.
 * `upstream` specifies the address of the upstream DNS server (eg. `8.8.8.8`).
+* `ea-ipver` causes the server to return SERVFAIL for AAAA (resp. A) requests if `ea-ipver` is set
+  to 4 (resp. 6); when set to `both` (the default), all requests will go to the mapper, and
+  SERVFAIL will only be returned if the mapper returns NACK.
+* `gw-ipver` is similar to `ea-ipver`, except for the IP version of the IPREF gateway in the
+  context of AA records. Setting this is useful to avoid unnecessary upstream DNS requests or
+  requests to the mapper when the local gateway only supports tunnelling over a specific IP version.
 * `mapper` specifies the mapper name (optional)
 * `mapper-socket-dir` specifies the path to the directory containing the Unix domain socket for
   communication with the gateway - the default is `/var/run/ipref-gw`.

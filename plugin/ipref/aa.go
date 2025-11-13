@@ -10,6 +10,7 @@ import (
 )
 
 var UnsupportedRRType = errors.New("unsupported RR type")
+var UnsupportedIPVersion = errors.New("IP version disabled by configuration")
 var NoAARecordsFound = errors.New("no valid AA records found")
 
 // resolve AA query (emulated with TXT for now)
@@ -29,6 +30,12 @@ func (ipr *Ipref) resolve_aa(req *dns.Msg) ([]dns.RR, error) {
 		return nil, UnsupportedRRType
 	}
 	name := normalizeName(q.Name)
+
+	// SERVFAIL if request is for disabled IP version
+
+	if ipr.ea_ipver != 0 && ea_ipver != ipr.ea_ipver {
+		return nil, UnsupportedIPVersion
+	}
 
 	// resolve TXT
 
@@ -82,7 +89,7 @@ func (ipr *Ipref) resolve_aa(req *dns.Msg) ([]dns.RR, error) {
 
 				gwname := normalizeName(addr[0])
 
-				for _, dns_type := range []uint16{dns.TypeAAAA, dns.TypeA} {
+				for _, dns_type := range ipr.gw_dns_types {
 
 					var gwres *dns.Msg
 					gwres, err = ipr.upstreamResolve(gwname, dns_type)
@@ -123,6 +130,11 @@ func (ipr *Ipref) resolve_aa(req *dns.Msg) ([]dns.RR, error) {
 				}
 
 			} else {
+
+				if ipr.gw_ipver != 0 && ipr.gw_ipver != gw.Ver() {
+					log.Debugf("context in AA record has IP version disabled by configuration: %v", gw)
+					continue
+				}
 
 				ea, err = ipr.encoded_address(name, ea_ipver, gw, ref)
 				if err != nil {

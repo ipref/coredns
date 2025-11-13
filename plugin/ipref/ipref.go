@@ -21,6 +21,9 @@ type Ipref struct {
 	upstream string
 
 	m *MapperClient
+	ea_ipver int
+	gw_ipver int
+	gw_dns_types []uint16
 	mapper_socket string
 
 	Next plugin.Handler

@@ -6,6 +6,7 @@ import (
 	"github.com/coredns/coredns/core/dnsserver"
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/plugin/metrics"
+	"github.com/miekg/dns"
 	"net"
 	"strings"
 )
@@ -49,6 +50,8 @@ func setup(c *caddy.Controller) error {
 func iprefParse(c *caddy.Controller) (*Ipref, error) {
 	ipr := &Ipref{
 		m: &MapperClient{},
+		ea_ipver: 0,
+		gw_ipver: 0,
 		mapper_socket: "",
 	}
 
@@ -94,6 +97,28 @@ func iprefParse(c *caddy.Controller) (*Ipref, error) {
 					ipr.upstream += ":53"
 				}
 
+			case "ea-ipver", "gw-ipver":
+				args := c.RemainingArgs()
+				if len(args) != 1 {
+					return nil, c.ArgErr()
+				}
+				var ipver int
+				switch args[0] {
+				case "4":
+					ipver = 4
+				case "6":
+					ipver = 6
+				case "both":
+					ipver = 0
+				default:
+					return nil, c.ArgErr()
+				}
+				if name == "ea-ipver" {
+					ipr.ea_ipver = ipver
+				} else {
+					ipr.gw_ipver = ipver
+				}
+
 			case "mapper":
 				args := c.RemainingArgs()
 				if len(args) != 1 {
@@ -117,6 +142,15 @@ func iprefParse(c *caddy.Controller) (*Ipref, error) {
 	if ipr.upstream == "" {
 		return nil, fmt.Errorf("missing upstream")
 	}
+
+	ipr.gw_dns_types = make([]uint16, 0, 2)
+	if ipr.gw_ipver == 0 || ipr.gw_ipver == 6 {
+		ipr.gw_dns_types = append(ipr.gw_dns_types, dns.TypeAAAA)
+	}
+	if ipr.gw_ipver == 0 || ipr.gw_ipver == 4 {
+		ipr.gw_dns_types = append(ipr.gw_dns_types, dns.TypeA)
+	}
+
 	mapper_name := "mappers"
 	if ipr.mapper_socket != "" {
 		mapper_name = "mapper-" + ipr.mapper_socket
