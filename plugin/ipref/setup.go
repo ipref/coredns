@@ -98,20 +98,21 @@ func iprefParse(c *caddy.Controller) (*Ipref, error) {
 				}
 
 			case "ea-ipver", "gw-ipver":
-				args := c.RemainingArgs()
-				if len(args) != 1 {
-					return nil, c.ArgErr()
+				ipv4 := false
+				ipv6 := false
+				for _, arg := range c.RemainingArgs() {
+					switch arg {
+					case "4": ipv4 = true
+					case "6": ipv6 = true
+					default: return nil, c.ArgErr()
+					}
 				}
 				var ipver int
-				switch args[0] {
-				case "4":
-					ipver = 4
-				case "6":
-					ipver = 6
-				case "both":
-					ipver = 0
-				default:
-					return nil, c.ArgErr()
+				switch {
+				case ipv4 && ipv6:  ipver = 0
+				case ipv4 && !ipv6: ipver = 4
+				case !ipv4 && ipv6: ipver = 6
+				default: return nil, c.ArgErr()
 				}
 				if name == "ea-ipver" {
 					ipr.ea_ipver = ipver
