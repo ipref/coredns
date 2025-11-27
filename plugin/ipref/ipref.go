@@ -84,15 +84,17 @@ except:
 }
 
 func (ipr *Ipref) upstreamResolve(qname string, rrtype uint16) (msg *dns.Msg, err error) {
+	qname = normalizeName(qname)
 	msg = new(dns.Msg)
 	msg.SetQuestion(qname, rrtype)
 	msg, err = dns.Exchange(msg, ipr.upstream)
 	if err != nil {
-		msg = nil
-		return
+		return nil, fmt.Errorf("error querying upstream when resolving %s %s: %s",
+			qname, rrtypeToString(rrtype), err)
 	}
 	if msg.Rcode != dns.RcodeSuccess {
-		return nil, fmt.Errorf("%v", rcodeToString(uint16(msg.Rcode)))
+		return nil, fmt.Errorf("upstream returned error when resolving %s %s: %s",
+			qname, rrtypeToString(rrtype), rcodeToString(uint16(msg.Rcode)))
 	}
 	return
 }
@@ -103,6 +105,14 @@ func normalizeName(name string) string {
 		name += "."
 	}
 	return name
+}
+
+func rrtypeToString(rrtype uint16) string {
+	str, ok := dns.TypeToString[rrtype]
+	if !ok {
+		str = strconv.Itoa(int(rrtype))
+	}
+	return str
 }
 
 func rcodeToString(rcode uint16) string {

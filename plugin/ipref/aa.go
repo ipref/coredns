@@ -41,7 +41,7 @@ func (ipr *Ipref) resolve_aa(req *dns.Msg) ([]dns.RR, error) {
 
 	upRes, err := ipr.upstreamResolve(name, dns.TypeTXT)
 	if err != nil {
-		err = fmt.Errorf("error querying upstream: %v", err)
+		err = fmt.Errorf("error getting AA record: %v", err)
 		log.Errorf("%v", err)
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (ipr *Ipref) resolve_aa(req *dns.Msg) ([]dns.RR, error) {
 			addr := strings.Split(txt[3:], "+")
 
 			if len(addr) != 2 {
-				log.Debugf("invalid AA record: '%v'", txt)
+				log.Debugf("invalid AA record of %s: '%v'", name, txt)
 				continue
 			}
 
@@ -78,7 +78,7 @@ func (ipr *Ipref) resolve_aa(req *dns.Msg) ([]dns.RR, error) {
 
 			ref, err := ParseRef(addr[1])
 			if err != nil {
-				log.Debugf("invalid AA record: '%v'", txt)
+				log.Debugf("invalid AA record of %s: '%v'", name, txt)
 				continue
 			}
 
@@ -94,11 +94,7 @@ func (ipr *Ipref) resolve_aa(req *dns.Msg) ([]dns.RR, error) {
 					var gwres *dns.Msg
 					gwres, err = ipr.upstreamResolve(gwname, dns_type)
 					if err != nil {
-						typ := "AAAA"
-						if dns_type == dns.TypeA {
-							typ = "A"
-						}
-						log.Debugf("error resolving domain as %v record in AA record: '%v'", typ, gwname)
+						log.Debugf("error resolving domain in AA record of %s: %v", name, err)
 						continue
 					}
 
@@ -132,7 +128,7 @@ func (ipr *Ipref) resolve_aa(req *dns.Msg) ([]dns.RR, error) {
 			} else {
 
 				if ipr.gw_ipver != 0 && ipr.gw_ipver != gw.Ver() {
-					log.Debugf("context in AA record has IP version disabled by configuration: %v", gw)
+					log.Debugf("context in AA record of %s has IP version disabled by configuration: %v", name, gw)
 					continue
 				}
 
