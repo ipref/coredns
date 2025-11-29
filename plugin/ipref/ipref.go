@@ -30,7 +30,7 @@ type Ipref struct {
 }
 
 func (ipr *Ipref) Stop() error {
-	ipr.m.clear()
+	ipr.m.stop()
 	return nil
 }
 

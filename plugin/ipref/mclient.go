@@ -19,6 +19,7 @@ var be = binary.BigEndian
 
 type MapperClient struct {
 	lock     sync.Mutex
+	running  bool
 	conn     *net.UnixConn
 	msgid    uint16
 
@@ -28,15 +29,20 @@ type MapperClient struct {
 }
 
 func (m *MapperClient) init() {
+	*m = MapperClient{}
+	m.running = true
 	m.msgid = uint16(time.Now().Unix() & 0xffff)
 }
 
-func (m *MapperClient) clear() {
+func (m *MapperClient) stop() {
 	m.lock.Lock()
 	defer m.lock.Unlock()
+	log.Debugf("stopping mclient")
 	if m.conn != nil {
 		m.conn.Close()
+		m.conn = nil
 	}
+	m.running = false
 }
 
 func (ipr *Ipref) encoded_address(dnm string, ea_ipver int, gw IP, ref Ref) (IP, error) {
@@ -51,6 +57,9 @@ func (ipr *Ipref) encoded_address(dnm string, ea_ipver int, gw IP, ref Ref) (IP,
 	m.lock.Lock()
 	defer m.lock.Unlock()
 
+	if !m.running {
+		return IP{}, fmt.Errorf("mclient has stopped")
+	}
 	if m.conn == nil {
 		conn, err := net.DialUnix("unixpacket", nil, &net.UnixAddr{ipr.mapper_socket, "unixpacket"})
 		if err != nil {
