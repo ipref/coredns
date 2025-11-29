@@ -13,6 +13,7 @@ import (
 
 const (
 	MSGMAX = ((V1_HDR_LEN + V1_AREC_MAX_LEN + 2 + 255 + 16) / 16) * 16 // round up to 16 byte boundary (304)
+	SOCKET_NRETRY uint = 1
 )
 
 var be = binary.BigEndian
@@ -60,13 +61,6 @@ func (ipr *Ipref) encoded_address(dnm string, ea_ipver int, gw IP, ref Ref) (IP,
 	if !m.running {
 		return IP{}, fmt.Errorf("mclient has stopped")
 	}
-	if m.conn == nil {
-		conn, err := net.DialUnix("unixpacket", nil, &net.UnixAddr{ipr.mapper_socket, "unixpacket"})
-		if err != nil {
-			return IP{}, fmt.Errorf("cannot connect to mapper: %v", err)
-		}
-		m.conn = conn
-	}
 
 	var msg [MSGMAX]byte
 	var err error
@@ -108,60 +102,100 @@ func (ipr *Ipref) encoded_address(dnm string, ea_ipver int, gw IP, ref Ref) (IP,
 		msglen += (dnmlen + 5) &^ 3
 	}
 
+	be.PutUint16(msg[V1_PKTLEN:V1_PKTLEN+2], uint16(msglen/4))
+
+	// send map request over socket
+
+	var recvbuff [MSGMAX]byte
+	var rlen int
+	var ok bool
+	var arec_len int
+
+	nretry := uint(0)
+retry:
+
+	// open connection
+
+	if m.conn == nil {
+		m.conn, err = net.DialUnix("unixpacket", nil, &net.UnixAddr{ipr.mapper_socket, "unixpacket"})
+		if err != nil {
+			m.conn = nil
+			err = fmt.Errorf("cannot connect to mapper: %v", err)
+			goto ioerror
+		}
+	}
+
 	// set wait time for response
 
 	err = m.conn.SetDeadline(time.Now().Add(time.Millisecond * 500))
 	if err != nil {
-		return IP{}, fmt.Errorf("cannot set mapper request deadline: %v", err)
+		err = fmt.Errorf("cannot set mapper request deadline: %v", err)
+		goto ioerror
 	}
 
 	// send request to mapper
 
-	be.PutUint16(msg[V1_PKTLEN:V1_PKTLEN+2], uint16(msglen/4))
-
 	_, err = m.conn.Write(msg[:msglen])
 	if err != nil {
-		m.conn.Close()
-		m.conn = nil
-		return IP{}, fmt.Errorf("map request send error: %v", err)
+		err = fmt.Errorf("map request send error: %v", err)
+		goto ioerror
 	}
 
 	// read response
 
-	rlen, err := m.conn.Read(msg[:])
+	rlen, err = m.conn.Read(recvbuff[:])
 	if err != nil {
-		m.conn.Close()
-		m.conn = nil
-		return IP{}, fmt.Errorf("map request receive error: %v", err)
+		err = fmt.Errorf("map request receive error: %v", err)
+		goto ioerror
 	}
 
 	if rlen < V1_HDR_LEN {
-		return IP{}, fmt.Errorf("response from mapper too short")
+		err = fmt.Errorf("response from mapper too short")
+		goto ioerror
 	}
 
-	if msg[V1_VER] != V1_SIG {
-		return IP{}, fmt.Errorf("response is not a v1 protocol")
+	if recvbuff[V1_VER] != V1_SIG {
+		err = fmt.Errorf("response is not a v1 protocol")
+		goto ioerror
 	}
 
-	if msg[V1_CMD] != V1_ACK|V1_MC_GET_EA {
+	if recvbuff[V1_CMD] != V1_ACK|V1_MC_GET_EA {
+		// Don't retry, don't close the connection
 		return IP{}, fmt.Errorf("map request declined by mapper")
 	}
 
-	if rlen != int(be.Uint16(msg[V1_PKTLEN:V1_PKTLEN+2])*4) {
-		return IP{}, fmt.Errorf("incorrect packet length")
+	if rlen != int(be.Uint16(recvbuff[V1_PKTLEN:V1_PKTLEN+2])*4) {
+		err = fmt.Errorf("incorrect packet length")
+		goto ioerror
 	}
 
-	if be.Uint16(msg[V1_PKTID:V1_PKTID+2]) != m.msgid {
-		return IP{}, fmt.Errorf("mapper response out of sequence")
+	if be.Uint16(recvbuff[V1_PKTID:V1_PKTID+2]) != m.msgid {
+		err = fmt.Errorf("mapper response out of sequence")
+		goto ioerror
 	}
 
-	ok, arec_len, arec := AddrRecDecode(msg[V1_HDR_LEN:])
+	ok, arec_len, arec = AddrRecDecode(recvbuff[V1_HDR_LEN:])
 	if !ok || rlen != V1_HDR_LEN + arec_len {
-		return IP{}, fmt.Errorf("invalid address record")
+		err = fmt.Errorf("invalid address record")
+		goto ioerror
 	}
 	if arec.EA.Ver() != ea_ipver || arec.GW != gw || arec.Ref != ref {
-		return IP{}, fmt.Errorf("invalid address record data")
+		err = fmt.Errorf("invalid address record data")
+		goto ioerror
 	}
 
 	return arec.EA, nil
+
+ioerror:
+	if m.conn != nil {
+		m.conn.Close()
+		m.conn = nil
+	}
+	if nretry < SOCKET_NRETRY {
+		log.Errorf("mclient error (will retry): %v", err)
+		err = nil
+		nretry++
+		goto retry
+	}
+	return IP{}, err
 }
